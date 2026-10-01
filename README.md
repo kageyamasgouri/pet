@@ -6,6 +6,16 @@
 ## サイトURL
 https://petcare-gamma-lemon.vercel.app
 ## 使用技術
+Next.js 16：画面構築・アプリケーション基盤
+React 19：UIコンポーネントと画面状態の管理
+TypeScript 5.7：型安全な開発
+Tailwind CSS 4：レイアウト・デザイン・レスポンシブ対応
+shadcn/ui関連：UIコンポーネント設計の基盤
+Lucide React：犬・猫・カレンダー・ワクチン等のアイコン
+React Hooks：useState、useMemo によるログイン状態、ペット情報、記録データの管理
+Vercel Analytics：本番環境でのアクセス分析
+pnpm：パッケージ管理
+
 ## 設計ドキュメント
 ## 機能一覧
 - ユーザー登録・ログイン機能
