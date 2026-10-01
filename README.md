@@ -15,6 +15,8 @@ Lucide React：犬・猫・カレンダー・ワクチン等のアイコン
 React Hooks：useState、useMemo によるログイン状態、ペット情報、記録データの管理
 Vercel Analytics：本番環境でのアクセス分析
 pnpm：パッケージ管理
+DevTools ブラウザの開発者ツール
+GitHub Actions CI/CD
 
 ## 設計ドキュメント
 ## 機能一覧
