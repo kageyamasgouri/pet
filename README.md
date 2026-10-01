@@ -25,6 +25,8 @@ GitHub Actions CI/CD
 - 通院履歴の記録・閲覧機能
 - ワクチン履歴の記録・閲覧機能
 ## テスト、修正の設計及び実施書
+https://docs.google.com/spreadsheets/d/1v1rOo1L8zo0l9FADVcRr5itnIe-dPVWXWAweLZgztoY/edit?gid=0#gid=0
 ## アプリ改善案
+https://docs.google.com/spreadsheets/d/1xIhFaGZSKPCW3XSGmIM8_zFlAwz4cKOvFCDEzw6vtnU/edit?gid=482600378#gid=482600378
 ## 備考
 
