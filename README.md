@@ -16,7 +16,7 @@ React Hooks：useState、useMemo によるログイン状態、ペット情報�
 Vercel Analytics：本番環境でのアクセス分析
 pnpm：パッケージ管理
 DevTools ブラウザの開発者ツール
-GitHub Actions CI/CD
+GitHub Actions CI/CD https://github.com/kageyamasgouri/pet/actions
 
 ## 設計ドキュメント
 ## 機能一覧
