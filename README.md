@@ -29,4 +29,8 @@ https://docs.google.com/spreadsheets/d/1v1rOo1L8zo0l9FADVcRr5itnIe-dPVWXWAweLZgz
 ## アプリ改善案
 https://docs.google.com/spreadsheets/d/1xIhFaGZSKPCW3XSGmIM8_zFlAwz4cKOvFCDEzw6vtnU/edit?gid=482600378#gid=482600378
 ## 備考
+活用した生成AIとその用途
 
+ChatGPT：要件定義、設計、各種リサーチ
+v0：アプリのモック作成
+GitHub Copilot Chat：ローカル環境でのコードの修正相談
