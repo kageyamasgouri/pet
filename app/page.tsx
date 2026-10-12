@@ -1,7 +1,7 @@
 'use client'
 
 import { FormEvent, useMemo, useState } from 'react'
-import { getSupabaseClient } from '@/lib/supabase/client'
+import { supabase } from '@/lib/supabase'
 import {
   Activity,
   Bell,
@@ -66,7 +66,6 @@ function AuthScreen({ onLogin }: { onLogin: () => void }) {
     const password = String(formData.get('password'))
 
     try {
-      const supabase = getSupabaseClient()
       if (mode === 'login') {
         const { error } = await supabase.auth.signInWithPassword({ email, password })
         if (error) {
