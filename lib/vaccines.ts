@@ -2,6 +2,7 @@ import { supabase } from '@/lib/supabase'
 // 🟢 Create（追加）
 export async function addVaccine(data: {
   pet_id: number
+  user_id?: string
   vaccine_name: string
   vaccination_date: string
   next_date?: string

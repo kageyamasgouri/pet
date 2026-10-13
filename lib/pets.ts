@@ -1,6 +1,14 @@
 import { supabase } from '@/lib/supabase'
 // 🟢 Create（追加）
-export async function addPet(data: { name: string; species: string; user_id: string }) {
+export async function addPet(data: {
+  name: string
+  species: string
+  user_id: string
+  breed?: string
+  gender?: string
+  birth?: string
+  icon?: string
+}) {
   const { error } = await supabase.from('pets').insert(data)
   if (error) throw error
 }
