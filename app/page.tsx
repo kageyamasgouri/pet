@@ -10,9 +10,11 @@ import {
   LogOut,
   PawPrint,
   Plus,
+  Pencil,
   ShieldCheck,
   Stethoscope,
   Syringe,
+  Trash2,
   X,
 } from 'lucide-react'
 
@@ -44,6 +46,11 @@ type Visit = {
   weight: string
   memo: string
 }
+
+type EditTarget =
+  | { kind: 'pet'; item: Pet }
+  | { kind: 'visit'; item: Visit }
+  | { kind: 'vaccine'; item: Vaccine }
 
 const initialPets: Pet[] = [
   { id: 1, name: 'ポチ', species: '犬', breed: '柴犬', gender: 'オス', birth: '2021-04-12', icon: '🐕' },
@@ -84,7 +91,7 @@ function Logo() {
   )
 }
 
-function AuthScreen({ onLogin }: { onLogin: () => void }) {
+function AuthScreen({ onLogin }: { onLogin: () => void | Promise<void> }) {
   const [mode, setMode] = useState<'login' | 'signup'>('login')
   const [message, setMessage] = useState('')
 
@@ -94,6 +101,7 @@ function AuthScreen({ onLogin }: { onLogin: () => void }) {
     const formData = new FormData(event.currentTarget)
     const email = String(formData.get('email'))
     const password = String(formData.get('password'))
+    const name = String(formData.get('name') ?? '').trim()
 
     try {
       if (mode === 'login') {
@@ -102,18 +110,26 @@ function AuthScreen({ onLogin }: { onLogin: () => void }) {
           setMessage(error.message)
           return
         }
-        onLogin()
+        await onLogin()
         return
       }
 
-      const { data, error } = await supabase.auth.signUp({ email, password })
+      const { data, error } = await supabase.auth.signUp({
+        email,
+        password,
+        options: {
+          data: {
+            name,
+          },
+        },
+      })
       if (error) {
         setMessage(error.message)
         return
       }
 
       if (data.session) {
-        onLogin()
+        await onLogin()
       } else {
         setMessage('確認メールを送信しました。メール内のリンクから登録を完了してください。')
       }
@@ -345,11 +361,15 @@ function PetList({
   selectedId,
   onSelect,
   onAdd,
+  onEdit,
+  onDelete,
 }: {
   pets: Pet[]
   selectedId: number
   onSelect: (id: number) => void
   onAdd: () => void
+  onEdit: (pet: Pet) => void
+  onDelete: (pet: Pet) => void
 }) {
   return (
     <div>
@@ -361,27 +381,36 @@ function PetList({
         </button>
       </div>
 
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+      {pets.length === 0 ? (
+        <EmptyState label="ペットはまだ登録されていません" onAdd={onAdd} />
+      ) : <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
         {pets.map((pet) => (
-          <button
+          <article
             key={pet.id}
-            onClick={() => onSelect(pet.id)}
-            className={`rounded-2xl border bg-white p-5 text-left transition hover:-translate-y-1 hover:shadow-lg ${
+            className={`rounded-2xl border bg-white p-5 transition hover:shadow-lg ${
               selectedId === pet.id ? 'border-[#78a886]' : 'border-[#e3ebe4]'
             }`}
           >
-            <div className="flex items-start justify-between">
-              <span className="flex h-16 w-16 items-center justify-center rounded-2xl bg-[#eef6ef] text-4xl">{pet.icon}</span>
-              <ChevronRight size={18} className="text-[#a0aca3]" />
+            <button type="button" onClick={() => onSelect(pet.id)} className="w-full text-left">
+              <div className="flex items-start justify-between">
+                <span className="flex h-16 w-16 items-center justify-center rounded-2xl bg-[#eef6ef] text-4xl">{pet.icon}</span>
+                <ChevronRight size={18} className="text-[#a0aca3]" />
+              </div>
+              <h2 className="mt-5 text-lg font-semibold">{pet.name}</h2>
+              <p className="mt-1 text-sm text-[#738077]">{pet.species}・{pet.breed}</p>
+              <p className="mt-4 border-t border-[#edf1ed] pt-3 text-xs text-[#8b978f]">誕生日 {pet.birth ? formatDate(pet.birth) : '未登録'}</p>
+            </button>
+            <div className="mt-4 flex gap-2 border-t border-[#edf1ed] pt-3">
+              <button type="button" onClick={() => onEdit(pet)} className="flex flex-1 items-center justify-center gap-2 rounded-lg bg-[#eef6ef] px-3 py-2.5 text-sm font-medium text-[#36724f]">
+                <Pencil size={15} />編集
+              </button>
+              <button type="button" onClick={() => onDelete(pet)} className="flex flex-1 items-center justify-center gap-2 rounded-lg bg-[#fff1ef] px-3 py-2.5 text-sm font-medium text-[#b45249]">
+                <Trash2 size={15} />削除
+              </button>
             </div>
-            <h2 className="mt-5 text-lg font-semibold">{pet.name}</h2>
-            <p className="mt-1 text-sm text-[#738077]">
-              {pet.species}・{pet.breed}
-            </p>
-            <p className="mt-4 border-t border-[#edf1ed] pt-3 text-xs text-[#8b978f]">誕生日 {formatDate(pet.birth)}</p>
-          </button>
+          </article>
         ))}
-      </div>
+      </div>}
     </div>
   )
 }
@@ -390,10 +419,14 @@ function VisitList({
   visits,
   pet,
   onAdd,
+  onEdit,
+  onDelete,
 }: {
   visits: Visit[]
   pet: Pet
   onAdd: () => void
+  onEdit: (visit: Visit) => void
+  onDelete: (visit: Visit) => void
 }) {
   return (
     <div>
@@ -422,8 +455,16 @@ function VisitList({
                 </span>
               </div>
               <div className="mt-4 flex flex-wrap gap-5 text-sm text-[#68766e]">
-                <span>体重 {visit.weight}</span>
+                {visit.weight && <span>体重 {visit.weight}</span>}
                 <span>{visit.memo}</span>
+              </div>
+              <div className="mt-4 flex justify-end gap-2 border-t border-[#edf1ed] pt-3">
+                <button type="button" onClick={() => onEdit(visit)} className="flex items-center gap-2 rounded-lg bg-[#eef6ef] px-3 py-2 text-sm font-medium text-[#36724f]">
+                  <Pencil size={15} />編集
+                </button>
+                <button type="button" onClick={() => onDelete(visit)} className="flex items-center gap-2 rounded-lg bg-[#fff1ef] px-3 py-2 text-sm font-medium text-[#b45249]">
+                  <Trash2 size={15} />削除
+                </button>
               </div>
             </article>
           ))}
@@ -435,7 +476,12 @@ function VisitList({
   )
 }
 
-function VaccineList({ vaccines, pet }: { vaccines: Vaccine[]; pet: Pet }) {
+function VaccineList({ vaccines, pet, onEdit, onDelete }: {
+  vaccines: Vaccine[]
+  pet: Pet
+  onEdit: (vaccine: Vaccine) => void
+  onDelete: (vaccine: Vaccine) => void
+}) {
   return (
     <div>
       <div className="mb-5 flex items-center gap-2 text-sm text-[#839087]">
@@ -480,6 +526,14 @@ function VaccineList({ vaccines, pet }: { vaccines: Vaccine[]; pet: Pet }) {
                 </div>
 
                 {vaccine.memo && <p className="mt-3 text-xs text-[#849189]">メモ：{vaccine.memo}</p>}
+                <div className="mt-4 flex justify-end gap-2 border-t border-[#edf1ed] pt-3">
+                  <button type="button" onClick={() => onEdit(vaccine)} className="flex items-center gap-2 rounded-lg bg-[#eef6ef] px-3 py-2 text-sm font-medium text-[#36724f]">
+                    <Pencil size={15} />編集
+                  </button>
+                  <button type="button" onClick={() => onDelete(vaccine)} className="flex items-center gap-2 rounded-lg bg-[#fff1ef] px-3 py-2 text-sm font-medium text-[#b45249]">
+                    <Trash2 size={15} />削除
+                  </button>
+                </div>
               </article>
             )
           })}
@@ -575,6 +629,62 @@ function RecordForm({
   )
 }
 
+function EditModal({
+  target,
+  onClose,
+  onSubmit,
+}: {
+  target: EditTarget
+  onClose: () => void
+  onSubmit: (event: FormEvent<HTMLFormElement>) => void
+}) {
+  const title = target.kind === 'pet' ? 'ペット情報を編集' : target.kind === 'visit' ? '通院記録を編集' : 'ワクチン記録を編集'
+
+  return (
+    <div className="fixed inset-0 z-40 flex items-end justify-center overflow-y-auto bg-[#203429]/40 p-0 sm:items-center sm:p-5">
+      <section role="dialog" aria-modal="true" aria-labelledby="edit-dialog-title" className="my-auto w-full max-w-lg rounded-t-3xl bg-white p-6 sm:rounded-3xl">
+        <div className="mb-5 flex items-center justify-between">
+          <h2 id="edit-dialog-title" className="text-xl font-semibold">{title}</h2>
+          <button type="button" onClick={onClose} aria-label="閉じる" className="rounded-lg p-2 text-[#87948b] hover:bg-[#f1f5f1]">
+            <X size={20} />
+          </button>
+        </div>
+        <form onSubmit={onSubmit} className="grid gap-4 sm:grid-cols-2">
+          {target.kind === 'pet' ? (
+            <>
+              <FormInput label="ペット名" name="name" defaultValue={target.item.name} required />
+              <FormInput label="種類" name="species" defaultValue={target.item.species} required />
+              <FormInput label="品種" name="breed" defaultValue={target.item.breed} />
+              <FormInput label="性別" name="gender" defaultValue={target.item.gender} />
+              <FormInput label="生年月日" name="birth" type="date" defaultValue={target.item.birth} />
+              <FormInput label="アイコン" name="icon" defaultValue={target.item.icon} />
+            </>
+          ) : target.kind === 'visit' ? (
+            <>
+              <FormInput label="通院日" name="date" type="date" defaultValue={target.item.date} required />
+              <FormInput label="病院名" name="hospital" defaultValue={target.item.hospital} required />
+              <FormInput label="診察・通院カテゴリ" name="purpose" defaultValue={target.item.purpose} required />
+              <FormInput label="体重（kg）" name="weight" type="number" step="0.1" defaultValue={target.item.weight.replace(/\s*kg$/, '')} />
+              <FormInput label="メモ" name="memo" defaultValue={target.item.memo} />
+            </>
+          ) : (
+            <>
+              <FormInput label="ワクチン名・種類" name="name" defaultValue={target.item.name} required />
+              <FormInput label="接種日" name="date" type="date" defaultValue={target.item.date} required />
+              <FormInput label="次回接種予定日" name="next" type="date" defaultValue={target.item.next} required />
+              <FormInput label="メモ" name="memo" defaultValue={target.item.memo} />
+            </>
+          )}
+          <div className="flex gap-2 sm:col-span-2">
+            <button type="button" onClick={onClose} className="h-12 flex-1 rounded-xl border border-[#dce5dd] text-sm font-semibold text-[#68766e]">キャンセル</button>
+            <button className="h-12 flex-1 rounded-xl bg-[#36724f] text-sm font-semibold text-white">変更を保存</button>
+          </div>
+        </form>
+      </section>
+    </div>
+  )
+}
+
 function FormInput({
   label,
   name,
@@ -582,6 +692,7 @@ function FormInput({
   placeholder,
   required,
   step,
+  defaultValue,
 }: {
   label: string
   name: string
@@ -589,6 +700,7 @@ function FormInput({
   placeholder?: string
   required?: boolean
   step?: string
+  defaultValue?: string
 }) {
   return (
     <label className="block">
@@ -599,6 +711,7 @@ function FormInput({
         placeholder={placeholder}
         required={required}
         step={step}
+        defaultValue={defaultValue}
         className="h-12 w-full rounded-xl border border-[#dce5dd] bg-white px-4 text-sm outline-none focus:border-[#75a486] focus:ring-4 focus:ring-[#e1f0e4]"
       />
     </label>
@@ -634,6 +747,7 @@ function AddPetModal({ onClose, onSubmit }: { onClose: () => void; onSubmit: (ev
 
 export default function Page() {
   const [loggedIn, setLoggedIn] = useState(false)
+  const [userId, setUserId] = useState<string | null>(null)
   const [pets, setPets] = useState(initialPets)
   const [vaccines, setVaccines] = useState(initialVaccines)
   const [visits, setVisits] = useState(initialVisits)
@@ -641,7 +755,9 @@ export default function Page() {
   const [view, setView] = useState<'home' | 'pets' | 'visits' | 'vaccines' | 'record'>('home')
   const [recordType, setRecordType] = useState<'visit' | 'vaccine'>('visit')
   const [showAddPet, setShowAddPet] = useState(false)
+  const [editTarget, setEditTarget] = useState<EditTarget | null>(null)
   const [saveError, setSaveError] = useState<string | null>(null)
+  const [saveNotice, setSaveNotice] = useState<string | null>(null)
 
   const selectedPet = pets.find((pet) => pet.id === selectedId) ?? pets[0]
   const petVaccines = vaccines.filter((vaccine) => vaccine.petId === selectedId)
@@ -659,98 +775,112 @@ export default function Page() {
     [vaccines, pets],
   )
 
+  async function handleLogin() {
+    setSaveError(null)
+    const { data: userData, error: userError } = await supabase.auth.getUser()
+    if (userError || !userData.user) {
+      setSaveError('ログイン中のユーザー情報を取得できませんでした。')
+      return
+    }
+
+    const id = userData.user.id
+    setUserId(id)
+    const [petResult, visitResult, vaccineResult] = await Promise.all([
+      supabase.from('pets').select('*').eq('user_id', id),
+      supabase.from('visits').select('*').eq('user_id', id),
+      supabase.from('vaccines').select('*').eq('user_id', id),
+    ])
+
+    const loadErrors = [petResult.error, visitResult.error, vaccineResult.error].filter(Boolean)
+    if (loadErrors.length) setSaveError(`データの読み込みに失敗しました: ${loadErrors.map((error) => error?.message).join(' / ')}`)
+
+    const loadedPets: Pet[] = (petResult.data ?? []).map((row) => ({
+      id: Number(row.pet_id), name: row.name ?? '', species: row.species ?? '', breed: row.breed ?? '',
+      gender: row.gender ?? '', birth: row.birth ?? '', icon: row.icon ?? '🐾',
+    }))
+    const loadedVisits: Visit[] = (visitResult.data ?? []).map((row) => ({
+      id: Number(row.visit_id), petId: Number(row.pet_id), date: row.visit_date ?? '',
+      hospital: row.hospital_name ?? '', purpose: row.purpose ?? '',
+      weight: row.weight_kg == null ? '' : `${row.weight_kg} kg`, memo: row.memo ?? '',
+    }))
+    const loadedVaccines: Vaccine[] = (vaccineResult.data ?? []).map((row) => ({
+      id: Number(row.vaccine_id), petId: Number(row.pet_id), name: row.vaccine_name ?? '',
+      date: row.vaccination_date ?? '', next: row.next_date ?? '', memo: row.memo ?? '',
+    }))
+
+    setPets(loadedPets)
+    setVisits(loadedVisits)
+    setVaccines(loadedVaccines)
+    setSelectedId(loadedPets[0]?.id ?? 0)
+    setLoggedIn(true)
+  }
+
   async function addVisit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
     setSaveError(null)
-
-    const { data: userData, error: userError } = await supabase.auth.getUser()
-    if (userError || !userData.user) {
-      setSaveError('ログイン中のユーザー情報を取得できませんでした。再ログインしてください。')
-      return
-    }
-
     const data = new FormData(event.currentTarget)
+    const weight = String(data.get('weight') || '')
     const payload = {
       pet_id: selectedId,
-      user_id: userData.user.id,
+      user_id: userId ?? '',
       visit_date: String(data.get('date') || ''),
       hospital_name: String(data.get('hospital') || ''),
       purpose: String(data.get('purpose') || ''),
+      weight_kg: weight ? Number(weight) : null,
       memo: String(data.get('memo') || ''),
     }
 
-    const { error } = await supabase.from('visits').insert(payload)
-    if (error) {
-      setSaveError(error.message)
-      return
+    try {
+      const { data: saved, error } = await supabase.from('visits').insert(payload).select('visit_id').single()
+      if (error) throw error
+      const nextVisit: Visit = {
+        id: Number(saved.visit_id), petId: selectedId, date: payload.visit_date, hospital: payload.hospital_name,
+        purpose: payload.purpose, weight: weight ? `${weight} kg` : '', memo: payload.memo,
+      }
+      setVisits((current) => [nextVisit, ...current])
+      setSaveNotice('通院記録を保存しました。')
+      setView('visits')
+    } catch (error) {
+      setSaveError(error instanceof Error ? error.message : '通院記録を保存できませんでした。')
     }
-
-    const nextVisit: Visit = {
-      id: Date.now(),
-      petId: selectedId,
-      date: String(data.get('date') || ''),
-      hospital: String(data.get('hospital') || ''),
-      purpose: String(data.get('purpose') || ''),
-      weight: String(data.get('weight') || '') + (data.get('weight') ? ' kg' : ''),
-      memo: String(data.get('memo') || ''),
-    }
-
-    setVisits((current) => [nextVisit, ...current])
-    setView('visits')
   }
 
   async function addVaccine(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
     setSaveError(null)
 
-    const { data: userData, error: userError } = await supabase.auth.getUser()
-    if (userError || !userData.user) {
-      setSaveError('ログイン中のユーザー情報を取得できませんでした。再ログインしてください。')
-      return
-    }
-
     const data = new FormData(event.currentTarget)
     const payload = {
       pet_id: selectedId,
-      user_id: userData.user.id,
+      user_id: userId ?? '',
       vaccine_name: String(data.get('name') || ''),
       vaccination_date: String(data.get('date') || ''),
       next_date: String(data.get('next') || ''),
       memo: String(data.get('memo') || ''),
     }
 
-    const { error } = await supabase.from('vaccines').insert(payload)
-    if (error) {
-      setSaveError(error.message)
-      return
+    try {
+      const { data: saved, error } = await supabase.from('vaccines').insert(payload).select('vaccine_id').single()
+      if (error) throw error
+      const nextVaccine: Vaccine = {
+        id: Number(saved.vaccine_id), petId: selectedId, name: payload.vaccine_name,
+        date: payload.vaccination_date, next: payload.next_date, memo: payload.memo,
+      }
+      setVaccines((current) => [nextVaccine, ...current])
+      setSaveNotice('ワクチン記録を保存しました。')
+      setView('vaccines')
+    } catch (error) {
+      setSaveError(error instanceof Error ? error.message : 'ワクチン記録を保存できませんでした。')
     }
-
-    const nextVaccine: Vaccine = {
-      id: Date.now(),
-      petId: selectedId,
-      name: String(data.get('name') || ''),
-      date: String(data.get('date') || ''),
-      next: String(data.get('next') || ''),
-      memo: String(data.get('memo') || ''),
-    }
-
-    setVaccines((current) => [nextVaccine, ...current])
-    setView('vaccines')
   }
 
   async function addPet(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
     setSaveError(null)
 
-    const { data: userData, error: userError } = await supabase.auth.getUser()
-    if (userError || !userData.user) {
-      setSaveError('ログイン中のユーザー情報を取得できませんでした。再ログインしてください。')
-      return
-    }
-
     const data = new FormData(event.currentTarget)
     const payload = {
-      user_id: userData.user.id,
+      user_id: userId ?? '',
       name: String(data.get('name') || ''),
       species: String(data.get('species') || ''),
       breed: String(data.get('breed') || ''),
@@ -759,25 +889,137 @@ export default function Page() {
       icon: String(data.get('icon') || '🐾'),
     }
 
-    const { error } = await supabase.from('pets').insert(payload)
-    if (error) {
-      setSaveError(error.message)
+    try {
+      const { data: saved, error } = await supabase.from('pets').insert(payload).select('pet_id').single()
+      if (error) throw error
+      const pet: Pet = { id: Number(saved.pet_id), ...payload }
+      setPets((current) => [...current, pet])
+      setSelectedId(pet.id)
+      setShowAddPet(false)
+      setSaveNotice('ペットを登録しました。')
+    } catch (error) {
+      setSaveError(error instanceof Error ? error.message : 'ペットを登録できませんでした。')
+    }
+  }
+
+  async function saveEdit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    setSaveError(null)
+    setSaveNotice(null)
+    if (!editTarget || !userId) {
+      setSaveError('ログイン情報を確認できません。再度ログインしてください。')
       return
     }
 
-    const pet: Pet = {
-      id: Date.now(),
-      name: payload.name,
-      species: payload.species,
-      breed: payload.breed,
-      gender: payload.gender,
-      birth: payload.birth,
-      icon: payload.icon,
+    const data = new FormData(event.currentTarget)
+    try {
+      if (editTarget.kind === 'pet') {
+        const payload = {
+          name: String(data.get('name') || ''), species: String(data.get('species') || ''),
+          breed: String(data.get('breed') || ''), gender: String(data.get('gender') || ''),
+          birth: String(data.get('birth') || ''), icon: String(data.get('icon') || '🐾'),
+        }
+        const { error } = await supabase.from('pets').update(payload)
+          .eq('pet_id', editTarget.item.id).eq('user_id', userId).select('pet_id').single()
+        if (error) throw error
+        setPets((current) => current.map((pet) => pet.id === editTarget.item.id ? { ...pet, ...payload } : pet))
+        setSaveNotice('ペット情報を更新しました。')
+      } else if (editTarget.kind === 'visit') {
+        const weight = String(data.get('weight') || '')
+        const payload = {
+          visit_date: String(data.get('date') || ''), hospital_name: String(data.get('hospital') || ''),
+          purpose: String(data.get('purpose') || ''), weight_kg: weight ? Number(weight) : null,
+          memo: String(data.get('memo') || ''),
+        }
+        const { error } = await supabase.from('visits').update(payload)
+          .eq('visit_id', editTarget.item.id).eq('user_id', userId).select('visit_id').single()
+        if (error) throw error
+        const updated: Visit = {
+          ...editTarget.item, date: payload.visit_date, hospital: payload.hospital_name,
+          purpose: payload.purpose, weight: weight ? `${weight} kg` : '', memo: payload.memo,
+        }
+        setVisits((current) => current.map((visit) => visit.id === updated.id ? updated : visit))
+        setSaveNotice('通院記録を更新しました。')
+      } else {
+        const payload = {
+          vaccine_name: String(data.get('name') || ''), vaccination_date: String(data.get('date') || ''),
+          next_date: String(data.get('next') || ''), memo: String(data.get('memo') || ''),
+        }
+        const { error } = await supabase.from('vaccines').update(payload)
+          .eq('vaccine_id', editTarget.item.id).eq('user_id', userId).select('vaccine_id').single()
+        if (error) throw error
+        const updated: Vaccine = {
+          ...editTarget.item, name: payload.vaccine_name, date: payload.vaccination_date,
+          next: payload.next_date, memo: payload.memo,
+        }
+        setVaccines((current) => current.map((vaccine) => vaccine.id === updated.id ? updated : vaccine))
+        setSaveNotice('ワクチン記録を更新しました。')
+      }
+      setEditTarget(null)
+    } catch (error) {
+      setSaveError(error instanceof Error ? error.message : '変更を保存できませんでした。')
     }
+  }
 
-    setPets((current) => [...current, pet])
-    setSelectedId(pet.id)
-    setShowAddPet(false)
+  async function deleteVisit(visit: Visit) {
+    if (!window.confirm(`${formatDate(visit.date)}の通院記録を削除しますか？`)) return
+    if (!userId) { setSaveError('ログイン情報を確認できません。'); return }
+    setSaveError(null)
+    setSaveNotice(null)
+    try {
+      const { error } = await supabase.from('visits').delete()
+        .eq('visit_id', visit.id).eq('user_id', userId).select('visit_id').single()
+      if (error) throw error
+      setVisits((current) => current.filter((item) => item.id !== visit.id))
+      setSaveNotice('通院記録を削除しました。')
+    } catch (error) {
+      setSaveError(error instanceof Error ? error.message : '通院記録を削除できませんでした。')
+    }
+  }
+
+  async function deleteVaccine(vaccine: Vaccine) {
+    if (!window.confirm(`「${vaccine.name}」のワクチン記録を削除しますか？`)) return
+    if (!userId) { setSaveError('ログイン情報を確認できません。'); return }
+    setSaveError(null)
+    setSaveNotice(null)
+    try {
+      const { error } = await supabase.from('vaccines').delete()
+        .eq('vaccine_id', vaccine.id).eq('user_id', userId).select('vaccine_id').single()
+      if (error) throw error
+      setVaccines((current) => current.filter((item) => item.id !== vaccine.id))
+      setSaveNotice('ワクチン記録を削除しました。')
+    } catch (error) {
+      setSaveError(error instanceof Error ? error.message : 'ワクチン記録を削除できませんでした。')
+    }
+  }
+
+  async function deletePet(pet: Pet) {
+    if (!window.confirm(`「${pet.name}」を削除しますか？関連する履歴がある場合は削除できません。`)) return
+    if (!userId) { setSaveError('ログイン情報を確認できません。'); return }
+    setSaveError(null)
+    setSaveNotice(null)
+    try {
+      const [visitCheck, vaccineCheck] = await Promise.all([
+        supabase.from('visits').select('visit_id').eq('pet_id', pet.id).eq('user_id', userId),
+        supabase.from('vaccines').select('vaccine_id').eq('pet_id', pet.id).eq('user_id', userId),
+      ])
+      if (visitCheck.error) throw visitCheck.error
+      if (vaccineCheck.error) throw vaccineCheck.error
+      if ((visitCheck.data?.length ?? 0) > 0 || (vaccineCheck.data?.length ?? 0) > 0) {
+        setSaveError('このペットには通院またはワクチン履歴があります。先に履歴を個別に削除してください。')
+        return
+      }
+
+      const { error } = await supabase.from('pets').delete()
+        .eq('pet_id', pet.id).eq('user_id', userId).select('pet_id').single()
+      if (error) throw error
+      const remaining = pets.filter((item) => item.id !== pet.id)
+      setPets(remaining)
+      if (selectedId === pet.id) setSelectedId(remaining[0]?.id ?? 0)
+      setSaveNotice('ペットを削除しました。関連履歴は削除していません。')
+    } catch (error) {
+      setSaveError(error instanceof Error ? error.message : 'ペットを削除できませんでした。')
+    }
   }
 
   return (
@@ -790,15 +1032,15 @@ export default function Page() {
             <div className="mx-auto flex h-[72px] max-w-7xl items-center justify-between px-4 sm:px-8">
               <Logo />
               <div className="flex items-center gap-3">
-                <div className="hidden items-center gap-2 rounded-xl bg-[#eef6ef] px-3 py-2 text-sm sm:flex">
+                {selectedPet && <div className="hidden items-center gap-2 rounded-xl bg-[#eef6ef] px-3 py-2 text-sm sm:flex">
                   <span className="text-xl">{selectedPet.icon}</span>
                   <span>
                     <b className="block text-xs text-[#315c40]">選択中のペット</b>
                     <span className="text-[#6e7b72]">{selectedPet.name}</span>
                   </span>
-                </div>
+                </div>}
                 <button
-                  onClick={() => setLoggedIn(false)}
+                  onClick={() => { setLoggedIn(false); setUserId(null) }}
                   className="rounded-xl p-2.5 text-[#829087] transition hover:bg-[#f1f5f1]"
                   aria-label="ログアウト"
                 >
@@ -860,24 +1102,39 @@ export default function Page() {
                   {saveError}
                 </div>
               )}
+              {saveNotice && (
+                <div role="status" className="mb-4 rounded-xl border border-[#cce4d1] bg-[#edf7ef] px-4 py-3 text-sm text-[#36724f]">
+                  {saveNotice}
+                </div>
+              )}
 
-              {view === 'home' && (
+              {view === 'home' && selectedPet && (
                 <Home
                   selectedPet={selectedPet}
                   upcoming={upcoming}
-                  pets={pets}s
+                  pets={pets}
                   onSelect={setSelectedId}
                   onView={(next) => {
                     setView(next)
                   }}
                 />
               )}
-
-              {view === 'pets' && (
-                <PetList pets={pets} selectedId={selectedId} onSelect={setSelectedId} onAdd={() => setShowAddPet(true)} />
+              {view === 'home' && !selectedPet && (
+                <EmptyState label="ペットを登録すると健康管理を始められます" onAdd={() => setShowAddPet(true)} />
               )}
 
-              {view === 'visits' && (
+              {view === 'pets' && (
+                <PetList
+                  pets={pets}
+                  selectedId={selectedId}
+                  onSelect={setSelectedId}
+                  onAdd={() => setShowAddPet(true)}
+                  onEdit={(pet) => setEditTarget({ kind: 'pet', item: pet })}
+                  onDelete={deletePet}
+                />
+              )}
+
+              {view === 'visits' && selectedPet && (
                 <VisitList
                   visits={petVisits}
                   pet={selectedPet}
@@ -885,12 +1142,20 @@ export default function Page() {
                     setRecordType('visit')
                     setView('record')
                   }}
+                  onEdit={(visit) => setEditTarget({ kind: 'visit', item: visit })}
+                  onDelete={deleteVisit}
                 />
               )}
+              {view === 'visits' && !selectedPet && <EmptyState label="通院履歴を見るには、先にペットを登録してください" onAdd={() => setShowAddPet(true)} />}
 
-              {view === 'vaccines' && <VaccineList vaccines={petVaccines} pet={selectedPet} />}
+              {view === 'vaccines' && selectedPet && (
+                <VaccineList vaccines={petVaccines} pet={selectedPet}
+                  onEdit={(vaccine) => setEditTarget({ kind: 'vaccine', item: vaccine })}
+                  onDelete={deleteVaccine} />
+              )}
+              {view === 'vaccines' && !selectedPet && <EmptyState label="ワクチン履歴を見るには、先にペットを登録してください" onAdd={() => setShowAddPet(true)} />}
 
-              {view === 'record' && (
+              {view === 'record' && selectedPet && (
                 <RecordForm
                   type={recordType}
                   pet={selectedPet}
@@ -899,12 +1164,14 @@ export default function Page() {
                   onVaccine={addVaccine}
                 />
               )}
+              {view === 'record' && !selectedPet && <EmptyState label="記録を追加するには、先にペットを登録してください" onAdd={() => setShowAddPet(true)} />}
             </section>
           </div>
         </>
       )}
 
       {showAddPet && <AddPetModal onClose={() => setShowAddPet(false)} onSubmit={addPet} />}
+      {editTarget && <EditModal target={editTarget} onClose={() => setEditTarget(null)} onSubmit={saveEdit} />}
     </main>
   )
 }
