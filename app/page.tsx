@@ -1,7 +1,7 @@
 'use client'
 
 import { FormEvent, useMemo, useState } from 'react'
-import { supabase } from '@/lib/supabase'
+import { supabase } from '@/lib/supabase/client'
 import {
   Activity,
   Bell,
@@ -758,7 +758,6 @@ export default function Page() {
   const [editTarget, setEditTarget] = useState<EditTarget | null>(null)
   const [saveError, setSaveError] = useState<string | null>(null)
   const [saveNotice, setSaveNotice] = useState<string | null>(null)
-
   const selectedPet = pets.find((pet) => pet.id === selectedId) ?? pets[0]
   const petVaccines = vaccines.filter((vaccine) => vaccine.petId === selectedId)
   const petVisits = visits.filter((visit) => visit.petId === selectedId).sort((a, b) => b.date.localeCompare(a.date))
@@ -817,89 +816,33 @@ export default function Page() {
 
   async function addVisit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
-    setSaveError(null)
+    setSaveError('')
     const data = new FormData(event.currentTarget)
-    const weight = String(data.get('weight') || '')
-    const payload = {
-      pet_id: selectedId,
-      user_id: userId ?? '',
-      visit_date: String(data.get('date') || ''),
-      hospital_name: String(data.get('hospital') || ''),
-      purpose: String(data.get('purpose') || ''),
-      weight_kg: weight ? Number(weight) : null,
-      memo: String(data.get('memo') || ''),
-    }
-
-    try {
-      const { data: saved, error } = await supabase.from('visits').insert(payload).select('visit_id').single()
-      if (error) throw error
-      const nextVisit: Visit = {
-        id: Number(saved.visit_id), petId: selectedId, date: payload.visit_date, hospital: payload.hospital_name,
-        purpose: payload.purpose, weight: weight ? `${weight} kg` : '', memo: payload.memo,
-      }
-      setVisits((current) => [nextVisit, ...current])
-      setSaveNotice('通院記録を保存しました。')
-      setView('visits')
-    } catch (error) {
-      setSaveError(error instanceof Error ? error.message : '通院記録を保存できませんでした。')
-    }
+    const visit = { pet_id: selectedId, date: String(data.get('date')), hospital: String(data.get('hospital')), purpose: String(data.get('purpose')), weight: String(data.get('weight')), memo: String(data.get('memo')) }
+    const { data: saved, error } = await supabase.from('visits').insert(visit).select().single()
+    if (error) { setSaveError('通院記録を保存できませんでした。Supabaseのテーブル設定を確認してください。'); return }
+    setVisits([{ id: saved.id, petId: saved.pet_id, date: saved.date, hospital: saved.hospital, purpose: saved.purpose, weight: `${saved.weight} kg`, memo: saved.memo ?? '' }, ...visits])
+    setView('visits')
   }
-
   async function addVaccine(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
-    setSaveError(null)
-
+    setSaveError('')
     const data = new FormData(event.currentTarget)
-    const payload = {
-      pet_id: selectedId,
-      user_id: userId ?? '',
-      vaccine_name: String(data.get('name') || ''),
-      vaccination_date: String(data.get('date') || ''),
-      next_date: String(data.get('next') || ''),
-      memo: String(data.get('memo') || ''),
-    }
-
-    try {
-      const { data: saved, error } = await supabase.from('vaccines').insert(payload).select('vaccine_id').single()
-      if (error) throw error
-      const nextVaccine: Vaccine = {
-        id: Number(saved.vaccine_id), petId: selectedId, name: payload.vaccine_name,
-        date: payload.vaccination_date, next: payload.next_date, memo: payload.memo,
-      }
-      setVaccines((current) => [nextVaccine, ...current])
-      setSaveNotice('ワクチン記録を保存しました。')
-      setView('vaccines')
-    } catch (error) {
-      setSaveError(error instanceof Error ? error.message : 'ワクチン記録を保存できませんでした。')
-    }
+    const vaccine = { pet_id: selectedId, name: String(data.get('name')), date: String(data.get('date')), next: String(data.get('next')), memo: String(data.get('memo')) }
+    const { data: saved, error } = await supabase.from('vaccines').insert(vaccine).select().single()
+    if (error) { setSaveError('ワクチン記録を保存できませんでした。Supabaseのテーブル設定を確認してください。'); return }
+    setVaccines([{ id: saved.id, petId: saved.pet_id, name: saved.name, date: saved.date, next: saved.next, memo: saved.memo ?? '' }, ...vaccines])
+    setView('vaccines')
   }
-
   async function addPet(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
-    setSaveError(null)
-
+    setSaveError('')
     const data = new FormData(event.currentTarget)
-    const payload = {
-      user_id: userId ?? '',
-      name: String(data.get('name') || ''),
-      species: String(data.get('species') || ''),
-      breed: String(data.get('breed') || ''),
-      gender: String(data.get('gender') || ''),
-      birth: String(data.get('birth') || ''),
-      icon: String(data.get('icon') || '🐾'),
-    }
-
-    try {
-      const { data: saved, error } = await supabase.from('pets').insert(payload).select('pet_id').single()
-      if (error) throw error
-      const pet: Pet = { id: Number(saved.pet_id), ...payload }
-      setPets((current) => [...current, pet])
-      setSelectedId(pet.id)
-      setShowAddPet(false)
-      setSaveNotice('ペットを登録しました。')
-    } catch (error) {
-      setSaveError(error instanceof Error ? error.message : 'ペットを登録できませんでした。')
-    }
+    const petData = { name: String(data.get('name')), species: String(data.get('species')), breed: String(data.get('breed')), gender: String(data.get('gender')), birth: String(data.get('birth')), icon: String(data.get('icon')) || '🐾' }
+    const { data: saved, error } = await supabase.from('pets').insert(petData).select().single()
+    if (error) { setSaveError('ペットを保存できませんでした。Supabaseのテーブル設定を確認してください。'); return }
+    const pet = { id: saved.id, ...petData }
+    setPets([...pets, pet]); setSelectedId(pet.id); setShowAddPet(false)
   }
 
   async function saveEdit(event: FormEvent<HTMLFormElement>) {
@@ -1025,7 +968,7 @@ export default function Page() {
   return (
     <main className="min-h-screen bg-[#f5f8f5] text-[#27352d]">
       {!loggedIn ? (
-        <AuthScreen onLogin={() => setLoggedIn(true)} />
+        <AuthScreen onLogin={handleLogin} />
       ) : (
         <>
           <header className="sticky top-0 z-20 border-b border-[#e5ebe5] bg-white/95 backdrop-blur">
@@ -1172,6 +1115,31 @@ export default function Page() {
 
       {showAddPet && <AddPetModal onClose={() => setShowAddPet(false)} onSubmit={addPet} />}
       {editTarget && <EditModal target={editTarget} onClose={() => setEditTarget(null)} onSubmit={saveEdit} />}
+      {loggedIn && (
+        <nav aria-label="メインナビゲーション" className="fixed bottom-4 left-1/2 z-20 flex -translate-x-1/2 gap-1 rounded-2xl border border-[#dfe8e0] bg-white p-1.5 shadow-xl md:hidden">
+          {([
+            { key: 'home', icon: Activity },
+            { key: 'pets', icon: PawPrint },
+            { key: 'visits', icon: Stethoscope },
+            { key: 'vaccines', icon: Syringe },
+            { key: 'record', icon: Plus },
+          ] as const).map(({ key, icon: Icon }) => (
+            <button
+              key={key}
+              type="button"
+              onClick={() => {
+                if (key === 'record') setRecordType('visit')
+                setView(key)
+              }}
+              className={`rounded-xl p-3 ${view === key ? 'bg-[#e3f1e6] text-[#36724f]' : 'text-[#89968d]'}`}
+              aria-label={key}
+              aria-current={view === key ? 'page' : undefined}
+            >
+              <Icon size={19} />
+            </button>
+          ))}
+        </nav>
+      )}
     </main>
   )
 }
