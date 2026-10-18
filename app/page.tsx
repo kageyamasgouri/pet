@@ -1,12 +1,14 @@
 'use client'
 
-import { FormEvent, useMemo, useState } from 'react'
+import { FormEvent, useCallback, useEffect, useMemo, useState } from 'react'
 import { supabase } from '@/lib/supabase/client'
 import {
   Activity,
   Bell,
   ChevronRight,
   ClipboardPlus,
+  Eye,
+  EyeOff,
   LogOut,
   PawPrint,
   Plus,
@@ -91,23 +93,63 @@ function Logo() {
   )
 }
 
-function AuthScreen({ onLogin }: { onLogin: () => void | Promise<void> }) {
+function getAuthErrorMessage(error: unknown) {
+  const message = error instanceof Error ? error.message.toLowerCase() : ''
+
+  if (message.includes('invalid login credentials')) return 'メールアドレスまたはパスワードが正しくありません。'
+  if (message.includes('email not confirmed')) return 'メールアドレスの確認が完了していません。確認メールをご確認ください。'
+  if (message.includes('already registered') || message.includes('user already exists')) return 'このメールアドレスはすでに登録されています。ログインしてください。'
+  if (message.includes('password') && (message.includes('weak') || message.includes('short'))) return 'パスワードは6文字以上で入力してください。'
+  if (message.includes('provider is not enabled') || message.includes('unsupported provider')) return 'GoogleログインがSupabaseで有効になっていません。管理者に設定を確認してください。'
+  if (message.includes('redirect') && (message.includes('not allowed') || message.includes('mismatch'))) return '認証後のリダイレクトURLが許可されていません。SupabaseのURL Configurationを確認してください。'
+  if (message.includes('access_denied') || message.includes('user denied')) return 'Googleログインはキャンセルされました。'
+  return '認証に失敗しました。入力内容とSupabaseの認証設定をご確認ください。'
+}
+
+function AuthScreen({
+  onLogin,
+  notice,
+}: {
+  onLogin: () => void | Promise<void>
+  notice?: string
+}) {
   const [mode, setMode] = useState<'login' | 'signup'>('login')
   const [message, setMessage] = useState('')
+  const [messageIsError, setMessageIsError] = useState(false)
+  const [submitting, setSubmitting] = useState(false)
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
     setMessage('')
+    setMessageIsError(false)
     const formData = new FormData(event.currentTarget)
-    const email = String(formData.get('email'))
+    const email = String(formData.get('email') ?? '').trim()
     const password = String(formData.get('password'))
     const name = String(formData.get('name') ?? '').trim()
 
+    if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+      setMessage('有効なメールアドレスを入力してください。')
+      setMessageIsError(true)
+      return
+    }
+    if (password.length < 6) {
+      setMessage('パスワードは6文字以上で入力してください。')
+      setMessageIsError(true)
+      return
+    }
+    if (mode === 'signup' && !name) {
+      setMessage('お名前を入力してください。')
+      setMessageIsError(true)
+      return
+    }
+
+    setSubmitting(true)
     try {
       if (mode === 'login') {
         const { error } = await supabase.auth.signInWithPassword({ email, password })
         if (error) {
-          setMessage(error.message)
+          setMessage(getAuthErrorMessage(error))
+          setMessageIsError(true)
           return
         }
         await onLogin()
@@ -124,17 +166,39 @@ function AuthScreen({ onLogin }: { onLogin: () => void | Promise<void> }) {
         },
       })
       if (error) {
-        setMessage(error.message)
+        setMessage(getAuthErrorMessage(error))
+        setMessageIsError(true)
         return
       }
 
       if (data.session) {
         await onLogin()
+      } else if (data.user?.identities?.length === 0) {
+        setMessage('このメールアドレスはすでに登録されています。ログインしてください。')
+        setMessageIsError(true)
       } else {
         setMessage('確認メールを送信しました。メール内のリンクから登録を完了してください。')
       }
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : '認証に失敗しました。')
+      setMessage(getAuthErrorMessage(error))
+      setMessageIsError(true)
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
+  async function signInWithGoogle() {
+    setMessage('')
+    setMessageIsError(false)
+    try {
+      const { error } = await supabase.auth.signInWithOAuth({
+        provider: 'google',
+        options: { redirectTo: `${window.location.origin}/` },
+      })
+      if (error) throw error
+    } catch (error) {
+      setMessage(getAuthErrorMessage(error))
+      setMessageIsError(true)
     }
   }
 
@@ -199,16 +263,16 @@ function AuthScreen({ onLogin }: { onLogin: () => void | Promise<void> }) {
           <form onSubmit={submit} className="mt-7 space-y-5">
             {mode === 'signup' && <Field label="お名前" name="name" placeholder="山田 太郎" />}
             <Field label="メールアドレス" name="email" type="email" placeholder="you@example.com" />
-            <Field label="パスワード" name="password" type="password" placeholder="6文字以上" />
-            <button className="mt-2 flex h-12 w-full items-center justify-center gap-2 rounded-xl bg-[#36724f] text-sm font-semibold text-white shadow-lg shadow-[#36724f]/20 transition hover:bg-[#2c5e40]">
-              {mode === 'login' ? 'ログイン' : 'アカウントを作成'}
+            <Field label="パスワード" name="password" type="password" placeholder="6文字以上" autoComplete={mode === 'signup' ? 'new-password' : 'current-password'} />
+            <button disabled={submitting} className="mt-2 flex h-12 w-full items-center justify-center gap-2 rounded-xl bg-[#36724f] text-sm font-semibold text-white shadow-lg shadow-[#36724f]/20 transition hover:bg-[#2c5e40] disabled:cursor-wait disabled:opacity-60">
+              {submitting ? '処理中…' : mode === 'login' ? 'ログイン' : 'アカウントを作成'}
               <ChevronRight size={17} />
             </button>
           </form>
 
-          {message && (
-            <p role="status" className="mt-4 rounded-xl bg-[#e6f3e9] px-4 py-3 text-center text-sm text-[#36724f]">
-              {message}
+          {(message || notice) && (
+            <p role={messageIsError ? 'alert' : 'status'} className={`mt-4 rounded-xl px-4 py-3 text-center text-sm ${messageIsError ? 'bg-[#fde8e6] text-[#a94f49]' : 'bg-[#e6f3e9] text-[#36724f]'}`}>
+              {message || notice}
             </p>
           )}
 
@@ -220,11 +284,11 @@ function AuthScreen({ onLogin }: { onLogin: () => void | Promise<void> }) {
 
           <button
             type="button"
-            onClick={() => setMessage('Googleログインは連携後に利用できます。')}
-            className="flex h-12 w-full items-center justify-center gap-3 rounded-xl border border-[#dce5dd] bg-white text-sm font-medium"
+            onClick={signInWithGoogle}
+            className="flex h-12 w-full items-center justify-center gap-3 rounded-xl border border-[#dce5dd] bg-white text-sm font-medium transition hover:bg-[#f7faf7]"
           >
-            <b className="text-[#4285f4]">G</b>
-            Googleで続ける
+            <GoogleMark />
+            Googleで{mode === 'login' ? 'ログイン' : '登録'}
           </button>
 
           <p className="mt-8 text-center text-xs leading-5 text-[#9aa69d]">
@@ -238,28 +302,52 @@ function AuthScreen({ onLogin }: { onLogin: () => void | Promise<void> }) {
   )
 }
 
+function GoogleMark() {
+  return (
+    <svg aria-hidden="true" viewBox="0 0 48 48" className="h-5 w-5">
+      <path fill="#4285F4" d="M43.6 24.5c0-1.4-.1-2.8-.4-4.1H24v7.8h11a9.4 9.4 0 0 1-4.1 6.2v5.1h6.6c3.9-3.6 6.1-8.8 6.1-15Z" />
+      <path fill="#34A853" d="M24 44c5.5 0 10.1-1.8 13.5-4.8l-6.6-5.1c-1.8 1.2-4.1 2-6.9 2-5.3 0-9.8-3.6-11.4-8.4H5.8v5.3A20 20 0 0 0 24 44Z" />
+      <path fill="#FBBC05" d="M12.6 27.7a12 12 0 0 1 0-7.4V15H5.8a20 20 0 0 0 0 18l6.8-5.3Z" />
+      <path fill="#EA4335" d="M24 11.9c3 0 5.7 1 7.8 3.1l5.9-5.9C34.1 5.8 29.5 4 24 4A20 20 0 0 0 5.8 15l6.8 5.3c1.6-4.8 6.1-8.4 11.4-8.4Z" />
+    </svg>
+  )
+}
+
 function Field({
   label,
   name,
   type = 'text',
   placeholder,
+  autoComplete,
 }: {
   label: string
   name: string
   type?: string
   placeholder: string
+  autoComplete?: string
 }) {
+  const [visible, setVisible] = useState(false)
+  const inputType = type === 'password' && visible ? 'text' : type
+
   return (
     <label className="block">
       <span className="mb-2 block text-sm font-medium">{label}</span>
-      <input
-        name={name}
-        required
-        minLength={type === 'password' ? 6 : undefined}
-        type={type}
-        placeholder={placeholder}
-        className="h-12 w-full rounded-xl border border-[#dce5dd] bg-white px-4 text-sm outline-none transition placeholder:text-[#b4beb6] focus:border-[#75a486] focus:ring-4 focus:ring-[#e1f0e4]"
-      />
+      <span className="relative block">
+        <input
+          name={name}
+          required
+          minLength={type === 'password' ? 6 : undefined}
+          type={inputType}
+          placeholder={placeholder}
+          autoComplete={autoComplete ?? (name === 'email' ? 'email' : 'name')}
+          className={`h-12 w-full rounded-xl border border-[#dce5dd] bg-white px-4 text-sm outline-none transition placeholder:text-[#b4beb6] focus:border-[#75a486] focus:ring-4 focus:ring-[#e1f0e4] ${type === 'password' ? 'pr-12' : ''}`}
+        />
+        {type === 'password' && (
+          <button type="button" onClick={() => setVisible((current) => !current)} aria-label={visible ? 'パスワードを隠す' : 'パスワードを表示'} className="absolute inset-y-0 right-3 flex items-center text-[#849189]">
+            {visible ? <EyeOff size={18} /> : <Eye size={18} />}
+          </button>
+        )}
+      </span>
     </label>
   )
 }
@@ -746,6 +834,7 @@ function AddPetModal({ onClose, onSubmit }: { onClose: () => void; onSubmit: (ev
 }
 
 export default function Page() {
+  const [authReady, setAuthReady] = useState(false)
   const [loggedIn, setLoggedIn] = useState(false)
   const [userId, setUserId] = useState<string | null>(null)
   const [pets, setPets] = useState(initialPets)
@@ -758,6 +847,7 @@ export default function Page() {
   const [editTarget, setEditTarget] = useState<EditTarget | null>(null)
   const [saveError, setSaveError] = useState<string | null>(null)
   const [saveNotice, setSaveNotice] = useState<string | null>(null)
+  const [authNotice, setAuthNotice] = useState<string | undefined>()
   const selectedPet = pets.find((pet) => pet.id === selectedId) ?? pets[0]
   const petVaccines = vaccines.filter((vaccine) => vaccine.petId === selectedId)
   const petVisits = visits.filter((visit) => visit.petId === selectedId).sort((a, b) => b.date.localeCompare(a.date))
@@ -774,11 +864,12 @@ export default function Page() {
     [vaccines, pets],
   )
 
-  async function handleLogin() {
+  const handleLogin = useCallback(async () => {
     setSaveError(null)
+    setAuthNotice(undefined)
     const { data: userData, error: userError } = await supabase.auth.getUser()
     if (userError || !userData.user) {
-      setSaveError('ログイン中のユーザー情報を取得できませんでした。')
+      setAuthNotice('認証後にユーザー情報を確認できませんでした。もう一度ログインしてください。')
       return
     }
 
@@ -812,37 +903,159 @@ export default function Page() {
     setVaccines(loadedVaccines)
     setSelectedId(loadedPets[0]?.id ?? 0)
     setLoggedIn(true)
+  }, [])
+
+  useEffect(() => {
+    let active = true
+    const query = new URLSearchParams(window.location.search)
+    if (query.has('error') || query.has('error_description')) {
+      setAuthNotice(getAuthErrorMessage(new Error(query.get('error_description') ?? query.get('error') ?? '')))
+    }
+
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event) => {
+      if (event === 'SIGNED_OUT') {
+        setLoggedIn(false)
+        setUserId(null)
+        setPets([])
+        setVisits([])
+        setVaccines([])
+      }
+    })
+
+    void supabase.auth.getSession()
+      .then(async ({ data, error }) => {
+        if (!active) return
+        if (error) {
+          setAuthNotice('ログイン状態を確認できませんでした。もう一度ログインしてください。')
+        } else if (data.session) {
+          try {
+            await handleLogin()
+          } catch {
+            setAuthNotice('ユーザー情報を読み込めませんでした。もう一度ログインしてください。')
+          }
+        }
+      })
+      .catch(() => {
+        if (active) setAuthNotice('ログイン状態を確認できませんでした。ネットワークを確認して再度お試しください。')
+      })
+      .finally(() => {
+        if (active) setAuthReady(true)
+      })
+
+    return () => {
+      active = false
+      subscription.unsubscribe()
+    }
+  }, [handleLogin])
+
+  async function handleLogout() {
+    setSaveError(null)
+    setSaveNotice(null)
+    const { error } = await supabase.auth.signOut()
+    if (error) {
+      setSaveError('ログアウトできませんでした。時間をおいて再度お試しください。')
+      return
+    }
+    setLoggedIn(false)
+    setUserId(null)
+    setPets([])
+    setVisits([])
+    setVaccines([])
+    setAuthNotice('ログアウトしました。')
   }
 
   async function addVisit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
-    setSaveError('')
+    setSaveError(null)
+    setSaveNotice(null)
+    if (!userId) {
+      setSaveError('ログイン状態を確認できません。再度ログインしてください。')
+      return
+    }
     const data = new FormData(event.currentTarget)
-    const visit = { pet_id: selectedId, date: String(data.get('date')), hospital: String(data.get('hospital')), purpose: String(data.get('purpose')), weight: String(data.get('weight')), memo: String(data.get('memo')) }
-    const { data: saved, error } = await supabase.from('visits').insert(visit).select().single()
-    if (error) { setSaveError('通院記録を保存できませんでした。Supabaseのテーブル設定を確認してください。'); return }
-    setVisits([{ id: saved.id, petId: saved.pet_id, date: saved.date, hospital: saved.hospital, purpose: saved.purpose, weight: `${saved.weight} kg`, memo: saved.memo ?? '' }, ...visits])
-    setView('visits')
+    const weight = String(data.get('weight') ?? '')
+    const payload = {
+      pet_id: selectedId,
+      user_id: userId,
+      visit_date: String(data.get('date') ?? ''),
+      hospital_name: String(data.get('hospital') ?? ''),
+      purpose: String(data.get('purpose') ?? ''),
+      weight_kg: weight ? Number(weight) : null,
+      memo: String(data.get('memo') ?? ''),
+    }
+    try {
+      const { data: saved, error } = await supabase.from('visits').insert(payload).select('visit_id').maybeSingle()
+      if (error) throw error
+      setVisits((current) => [{
+        id: Number(saved.visit_id), petId: selectedId, date: payload.visit_date,
+        hospital: payload.hospital_name, purpose: payload.purpose,
+        weight: weight ? `${weight} kg` : '', memo: payload.memo,
+      }, ...current])
+      setSaveNotice('通院記録を保存しました。')
+      setView('visits')
+    } catch {
+      setSaveError('通院記録を保存できませんでした。入力内容とSupabaseのテーブル設定をご確認ください。')
+    }
   }
   async function addVaccine(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
-    setSaveError('')
+    setSaveError(null)
+    setSaveNotice(null)
+    if (!userId) {
+      setSaveError('ログイン状態を確認できません。再度ログインしてください。')
+      return
+    }
     const data = new FormData(event.currentTarget)
-    const vaccine = { pet_id: selectedId, name: String(data.get('name')), date: String(data.get('date')), next: String(data.get('next')), memo: String(data.get('memo')) }
-    const { data: saved, error } = await supabase.from('vaccines').insert(vaccine).select().single()
-    if (error) { setSaveError('ワクチン記録を保存できませんでした。Supabaseのテーブル設定を確認してください。'); return }
-    setVaccines([{ id: saved.id, petId: saved.pet_id, name: saved.name, date: saved.date, next: saved.next, memo: saved.memo ?? '' }, ...vaccines])
-    setView('vaccines')
+    const payload = {
+      pet_id: selectedId,
+      user_id: userId,
+      vaccine_name: String(data.get('name') ?? ''),
+      vaccination_date: String(data.get('date') ?? ''),
+      next_date: String(data.get('next') ?? ''),
+      memo: String(data.get('memo') ?? ''),
+    }
+    try {
+      const { data: saved, error } = await supabase.from('vaccines').insert(payload).select('vaccine_id').maybeSingle()
+      if (error) throw error
+      setVaccines((current) => [{
+        id: Number(saved.vaccine_id), petId: selectedId, name: payload.vaccine_name,
+        date: payload.vaccination_date, next: payload.next_date, memo: payload.memo,
+      }, ...current])
+      setSaveNotice('ワクチン記録を保存しました。')
+      setView('vaccines')
+    } catch {
+      setSaveError('ワクチン記録を保存できませんでした。入力内容とSupabaseのテーブル設定をご確認ください。')
+    }
   }
   async function addPet(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
-    setSaveError('')
+    setSaveError(null)
+    setSaveNotice(null)
+    if (!userId) {
+      setSaveError('ログイン状態を確認できません。再度ログインしてください。')
+      return
+    }
     const data = new FormData(event.currentTarget)
-    const petData = { name: String(data.get('name')), species: String(data.get('species')), breed: String(data.get('breed')), gender: String(data.get('gender')), birth: String(data.get('birth')), icon: String(data.get('icon')) || '🐾' }
-    const { data: saved, error } = await supabase.from('pets').insert(petData).select().single()
-    if (error) { setSaveError('ペットを保存できませんでした。Supabaseのテーブル設定を確認してください。'); return }
-    const pet = { id: saved.id, ...petData }
-    setPets([...pets, pet]); setSelectedId(pet.id); setShowAddPet(false)
+    const payload = {
+      user_id: userId,
+      name: String(data.get('name') ?? ''),
+      species: String(data.get('species') ?? ''),
+      breed: String(data.get('breed') ?? ''),
+      gender: String(data.get('gender') ?? ''),
+      birth: String(data.get('birth') ?? ''),
+      icon: String(data.get('icon') ?? '') || '🐾',
+    }
+    try {
+      const { data: saved, error } = await supabase.from('pets').insert(payload).select('pet_id').maybeSingle()
+      if (error) throw error
+      const pet: Pet = { id: Number(saved.pet_id), name: payload.name, species: payload.species, breed: payload.breed, gender: payload.gender, birth: payload.birth, icon: payload.icon }
+      setPets((current) => [...current, pet])
+      setSelectedId(pet.id)
+      setShowAddPet(false)
+      setSaveNotice('ペットを登録しました。')
+    } catch {
+      setSaveError('ペットを保存できませんでした。入力内容とSupabaseのテーブル設定をご確認ください。')
+    }
   }
 
   async function saveEdit(event: FormEvent<HTMLFormElement>) {
@@ -863,7 +1076,7 @@ export default function Page() {
           birth: String(data.get('birth') || ''), icon: String(data.get('icon') || '🐾'),
         }
         const { error } = await supabase.from('pets').update(payload)
-          .eq('pet_id', editTarget.item.id).eq('user_id', userId).select('pet_id').single()
+          .eq('pet_id', editTarget.item.id).eq('user_id', userId).select('pet_id').maybeSingle()
         if (error) throw error
         setPets((current) => current.map((pet) => pet.id === editTarget.item.id ? { ...pet, ...payload } : pet))
         setSaveNotice('ペット情報を更新しました。')
@@ -875,7 +1088,7 @@ export default function Page() {
           memo: String(data.get('memo') || ''),
         }
         const { error } = await supabase.from('visits').update(payload)
-          .eq('visit_id', editTarget.item.id).eq('user_id', userId).select('visit_id').single()
+          .eq('visit_id', editTarget.item.id).eq('user_id', userId).select('visit_id').maybeSingle()
         if (error) throw error
         const updated: Visit = {
           ...editTarget.item, date: payload.visit_date, hospital: payload.hospital_name,
@@ -889,7 +1102,7 @@ export default function Page() {
           next_date: String(data.get('next') || ''), memo: String(data.get('memo') || ''),
         }
         const { error } = await supabase.from('vaccines').update(payload)
-          .eq('vaccine_id', editTarget.item.id).eq('user_id', userId).select('vaccine_id').single()
+          .eq('vaccine_id', editTarget.item.id).eq('user_id', userId).select('vaccine_id').maybeSingle()
         if (error) throw error
         const updated: Vaccine = {
           ...editTarget.item, name: payload.vaccine_name, date: payload.vaccination_date,
@@ -911,7 +1124,7 @@ export default function Page() {
     setSaveNotice(null)
     try {
       const { error } = await supabase.from('visits').delete()
-        .eq('visit_id', visit.id).eq('user_id', userId).select('visit_id').single()
+        .eq('visit_id', visit.id).eq('user_id', userId).select('visit_id').maybeSingle()
       if (error) throw error
       setVisits((current) => current.filter((item) => item.id !== visit.id))
       setSaveNotice('通院記録を削除しました。')
@@ -927,7 +1140,7 @@ export default function Page() {
     setSaveNotice(null)
     try {
       const { error } = await supabase.from('vaccines').delete()
-        .eq('vaccine_id', vaccine.id).eq('user_id', userId).select('vaccine_id').single()
+        .eq('vaccine_id', vaccine.id).eq('user_id', userId).select('vaccine_id').maybeSingle()
       if (error) throw error
       setVaccines((current) => current.filter((item) => item.id !== vaccine.id))
       setSaveNotice('ワクチン記録を削除しました。')
@@ -954,7 +1167,7 @@ export default function Page() {
       }
 
       const { error } = await supabase.from('pets').delete()
-        .eq('pet_id', pet.id).eq('user_id', userId).select('pet_id').single()
+        .eq('pet_id', pet.id).eq('user_id', userId).select('pet_id').maybeSingle()
       if (error) throw error
       const remaining = pets.filter((item) => item.id !== pet.id)
       setPets(remaining)
@@ -967,8 +1180,12 @@ export default function Page() {
 
   return (
     <main className="min-h-screen bg-[#f5f8f5] text-[#27352d]">
-      {!loggedIn ? (
-        <AuthScreen onLogin={handleLogin} />
+      {!authReady ? (
+        <div className="flex min-h-screen items-center justify-center bg-[#f7faf7] text-sm text-[#688071]" role="status">
+          ログイン状態を確認しています…
+        </div>
+      ) : !loggedIn ? (
+        <AuthScreen onLogin={handleLogin} notice={authNotice} />
       ) : (
         <>
           <header className="sticky top-0 z-20 border-b border-[#e5ebe5] bg-white/95 backdrop-blur">
@@ -983,7 +1200,7 @@ export default function Page() {
                   </span>
                 </div>}
                 <button
-                  onClick={() => { setLoggedIn(false); setUserId(null) }}
+                  onClick={handleLogout}
                   className="rounded-xl p-2.5 text-[#829087] transition hover:bg-[#f1f5f1]"
                   aria-label="ログアウト"
                 >
