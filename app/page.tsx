@@ -531,8 +531,8 @@ function VisitList({
 
       {visits.length ? (
         <div className="space-y-3">
-          {visits.map((visit) => (
-            <article key={visit.id} className="rounded-2xl border border-[#e3ebe4] bg-white p-5">
+          {visits.map((visit, index) => (
+            <article key={ `${visit.id}-${index}` } className="rounded-2xl border border-[#e3ebe4] bg-white p-5">
               <div className="flex flex-wrap items-start justify-between gap-3">
                 <div>
                   <p className="text-xs font-medium text-[#6f9b7a]">{formatDate(visit.date)}</p>
@@ -1246,7 +1246,7 @@ export default function Page() {
                 <p className="text-sm text-[#839087]">2026年9月25日（金）</p>
                 <h1 className="mt-1 text-2xl font-semibold tracking-tight">
                   {view === 'home'
-                    ? 'こんにちは、田中さん'
+                    ? 'こんにちは！'
                     : view === 'pets'
                       ? 'ペット一覧'
                       : view === 'visits'
